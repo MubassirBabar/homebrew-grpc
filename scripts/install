@@ -1,0 +1,90 @@
+#!/bin/bash
+#
+# Installs gRPC in a Homebrew or Linuxbrew installation.
+#
+# Prerequisites: Homebrew(Mac) / Linuxbrew(Linux) is installed.
+#  - to install homebrew: see http://brew.sh
+#  - to install linuxbrew: https://github.com/Homebrew/linuxbrew#installation
+#
+# Usage:
+#
+# Install grpc core:
+#   curl -fsSL https://goo.gl/getgrpc | bash -
+#
+# Install grpc core and protoc plugins:
+#   curl -fsSL https://goo.gl/getgrpc | bash -s -- --with-plugins
+#
+
+set -e
+
+GRPC_VERSION='1.0.0'
+
+__grpc_check_for_brew() {
+    which 'brew' >> /dev/null || {
+        if [ "$(uname)" == "Darwin" ]; then
+            echo "Cannot find the brew command" \
+            " - please ensure you have installed Homebrew (http://brew.sh)." \
+            " If you're running this with sudo, try sudo env \"PATH=\$PATH\" instead." 1>&2
+        elif [ "$(expr substr $(uname -s) 1 5)" == "Linux" ]; then
+            echo "Cannot find the brew command" \
+            " - please ensure you have installed Linuxbrew (https://github.com/Homebrew/linuxbrew#installation)." \
+            " If you're running this with sudo, try sudo env \"PATH=\$PATH\" instead." 1>&2
+        else
+            echo "Your system is neither a Mac nor Linux, so gRPC is not currently supported" 1>&2
+        fi
+        return 1;
+    }
+}
+
+__grpc_brew_install() {
+    local pkg=${!#}
+    if brew list -1 | grep -q "^${pkg}\$"; then
+        echo "$pkg is already installed" 1>&2
+        return;
+    else
+        brew install $@
+    fi
+}
+
+__grpc_brew_root() {
+    __grpc_check_for_brew || return 1;
+    brew --prefix
+}
+
+__grpc_install_with_brew() {
+    # Needed for unzip, m4 (via google-protobuf), and zlib
+    brew tap | grep -q 'homebrew/dupes' || brew tap homebrew/dupes
+
+    # Explicitly install OpenSSL.
+    if [ "$(uname)" != "Darwin" ]; then
+        # there may be unresolved dependency issues installing openssl using linuxbrew on macs.
+        __grpc_brew_install pkg-config
+    fi
+
+    __grpc_brew_install zlib
+    __grpc_brew_install openssl
+
+
+    # On linux, explicitly install  unzip if it's not present, it's a protobuf dependency
+    # TODO: add this to the official homebrew formula
+    if [ "$(uname)" != "Darwin" ]; then
+        which 'unzip' >> /dev/null || {
+            __grpc_brew_install unzip
+        }
+    fi
+
+    # Current gRPC version is already installed
+    [[ $(brew list --versions | grep grpc) =~ $GRPC_VERSION ]] && echo "grpc $GRPC_VERSION is already installed" && return 0
+
+    # Otherwise install the tap and install grpc
+    brew tap | grep -q 'grpc/grpc' || brew tap grpc/grpc
+
+    # Explicitly install google-protobuf
+    __grpc_brew_install --without-python google-protobuf
+
+    # Install gRPC
+    __grpc_brew_install "$@" grpc
+}
+
+__grpc_check_for_brew;
+__grpc_install_with_brew "$@";
